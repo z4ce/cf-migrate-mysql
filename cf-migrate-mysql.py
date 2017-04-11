@@ -2,6 +2,7 @@
 import subprocess
 import json
 import argparse
+import os
 
 class CfCli:
   def __init__(self, instance):
@@ -11,7 +12,12 @@ class CfCli:
 
   def cmd(self, command):
     print("Running cf: " + command)
-    return subprocess.getoutput("CF_HOME="+ self.instance + " cf " + command).rstrip()
+    completed = subprocess.run("CF_HOME="+ self.instance + " cf " + command, shell=True, stdout=subprocess.PIPE)
+    if(completed.returncode != 0):
+      print("Failed running")
+      print(completed.stdout)
+      os.exit(1)
+    return completed.stdout.decode().rstrip()
 
 def main():
   parser = argparse.ArgumentParser(description="Moves MySQL from one space to another including creating services.\
@@ -41,10 +47,10 @@ def main():
   (src, org_guid, space_guid) = build_cli("src", vars(args))
   (dst, dst_org_guid, dst_space_guid) = build_cli("dst", vars(args))
 
-  space_obj = dst.curl("v2/spaces/" + space_guid + "/summary")
+  space_obj = src.curl("v2/spaces/" + space_guid + "/summary")
   for service in space_obj['services']:
     if service['service_plan']['service']['label'] == "p-mysql":
-      process_service(service, service['service_plan'], src, dst)
+      process_service(service, service['service_plan'], src, dst, dst_space_guid)
 
 def build_cli (name, options):
   dst = CfCli(name)
@@ -56,7 +62,7 @@ def build_cli (name, options):
   space_guid = dst.cmd("space --guid " + options[name + "_space"])
   return (dst, org_guid, space_guid)
 
-def process_service(service, service_plan, src, dst):
+def process_service(service, service_plan, src, dst, dst_space_guid):
   # Get the database contents
   src.cmd("create-service-key " + service['name'] + " migration_key")
   sk_obj = src.curl("v2/service_instances/"+service['guid']+"/service_keys?q=name:migration_key")
@@ -65,22 +71,29 @@ def process_service(service, service_plan, src, dst):
   src.cmd("delete-service-key -f " + service['name'] + " migration_key")
 
   # Restore into new environment
-  dst.cmd("create-service p-mysql " + service_plan['name'])
+  dst.cmd("create-service p-mysql " + service_plan['name'] + " " + service['name'])
   dst.cmd("create-service-key " + service['name'] + " migration_key")
-  dst_sk = dst.curl("v2/service_instances/"+service['guid']+"/service_keys?q=name:migration_key")
-  dst_entity = sk_obj['resources'][0]['entity']['credentials']
+  dst_svc_guid = dst.cmd("service --guid " + service['name'])
+  dst_sk = dst.curl("v2/service_instances/"+dst_svc_guid+"/service_keys?q=name:migration_key")
+  dst_entity = dst_sk['resources'][0]['entity']['credentials']
   mysqlimport(dst_entity['hostname'], dst_entity['port'], dst_entity['username'], dst_entity['password'], dst_entity['name'], entity['name'])
   dst.cmd("delete-service-key -f " + service['name'] + " migration_key")
 
 def mysqldump(hostname, port, username, password, db_name):
   mysql_cmd = "".join(["mysqldump --user=", username, " --password=", password, " --host=", hostname, " --port=", str(port), " ", db_name, " --single-transaction --skip-add-locks > ", "/tmp/", db_name, ".dump"])
   print(mysql_cmd)
-  subprocess.getoutput(mysql_cmd)
+  completed = subprocess.run(mysql_cmd, shell=True, stdout=subprocess.PIPE)
+  if(completed.returncode != 0):
+    print(completed.stdout)
+    os.exit(1)
 
 def mysqlimport(hostname, port, username, password, db_name, old_db_name):
   mysql_cmd = "".join(["mysql --user=", username, " --password=", password, " --host=", hostname, " --port=", str(port), " ", db_name, "< ", "/tmp/", old_db_name, ".dump"])
   print(mysql_cmd)
-  subprocess.getoutput(mysql_cmd)
+  completed = subprocess.run(mysql_cmd, shell=True, stdout=subprocess.PIPE)
+  if(completed.returncode != 0):
+    print(completed.stdout)
+    os.exit(1)
 
 if __name__ == '__main__':
   main()
