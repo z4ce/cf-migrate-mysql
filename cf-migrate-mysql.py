@@ -4,6 +4,8 @@ import json
 import argparse
 import sys
 
+plan_mapping = { "foo" : "bar", "baz" : "zyzz" }
+
 class CfCli:
   def __init__(self, instance):
     self.instance = instance
@@ -63,6 +65,7 @@ def build_cli (name, options):
   return (dst, org_guid, space_guid)
 
 def process_service(service, service_plan, src, dst, dst_space_guid):
+  new_plan = plan_mapping[service_plan['name']]
   # Get the database contents
   src.cmd("create-service-key " + service['name'] + " migration_key")
   sk_obj = src.curl("v2/service_instances/"+service['guid']+"/service_keys?q=name:migration_key")
@@ -71,7 +74,7 @@ def process_service(service, service_plan, src, dst, dst_space_guid):
   src.cmd("delete-service-key -f " + service['name'] + " migration_key")
 
   # Restore into new environment
-  dst.cmd("create-service p-mysql " + service_plan['name'] + " " + service['name'])
+  dst.cmd("create-service p-mysql " + new_plan + " " + service['name'])
   dst.cmd("create-service-key " + service['name'] + " migration_key")
   dst_svc_guid = dst.cmd("service --guid " + service['name'])
   dst_sk = dst.curl("v2/service_instances/"+dst_svc_guid+"/service_keys?q=name:migration_key")
