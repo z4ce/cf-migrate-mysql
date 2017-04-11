@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.6
 import subprocess
 import json
 import argparse
-import os
+import sys
 
 class CfCli:
   def __init__(self, instance):
@@ -16,7 +16,7 @@ class CfCli:
     if(completed.returncode != 0):
       print("Failed running")
       print(completed.stdout)
-      os.exit(1)
+      sys.exit(1)
     return completed.stdout.decode().rstrip()
 
 def main():
@@ -85,7 +85,8 @@ def mysqldump(hostname, port, username, password, db_name):
   completed = subprocess.run(mysql_cmd, shell=True, stdout=subprocess.PIPE)
   if(completed.returncode != 0):
     print(completed.stdout)
-    os.exit(1)
+    print(completed.stderr)
+    sys.exit(1)
 
 def mysqlimport(hostname, port, username, password, db_name, old_db_name):
   mysql_cmd = "".join(["mysql --user=", username, " --password=", password, " --host=", hostname, " --port=", str(port), " ", db_name, "< ", "/tmp/", old_db_name, ".dump"])
@@ -93,7 +94,8 @@ def mysqlimport(hostname, port, username, password, db_name, old_db_name):
   completed = subprocess.run(mysql_cmd, shell=True, stdout=subprocess.PIPE)
   if(completed.returncode != 0):
     print(completed.stdout)
-    os.exit(1)
+    print(completed.err)
+    sys.exit(1)
 
 if __name__ == '__main__':
   main()
